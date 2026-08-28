@@ -9,7 +9,12 @@ import {
   ActivityType,
 } from "discord.js";
 import { config } from "./config.js";
-import { addAssetsToAlbum, getOrCreateAlbumId, uploadAsset } from "./immich.js";
+import {
+  addAssetsToAlbum,
+  getOrCreateAlbumId,
+  getOrCreateAlbumShareUrl,
+  uploadAsset,
+} from "./immich.js";
 import { addChannel, isDynamicallyWatched, listDynamicChannels, removeChannel } from "./watchlist.js";
 
 type AttachmentSyncStatus = "created" | "duplicate" | "skipped";
@@ -162,12 +167,27 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       [
         "**Immich bot commands**",
         `\`${config.commandPrefix} help\` - Show this help message.`,
+        `\`${config.commandPrefix} gallery\` - Get a public link to this channel's album.`,
         `\`${config.commandPrefix} watch\` - Start watching this channel for images and videos.`,
         `\`${config.commandPrefix} backfill\` - Upload existing images and videos from this watched channel.`,
         `\`${config.commandPrefix} unwatch\` - Stop watching this channel.`,
         `\`${config.commandPrefix} list\` - List all channels currently being watched.`,
       ].join("\n")
     );
+    return;
+  }
+
+  if (subcommand === "gallery") {
+    if (!(await isWatched(message.channelId))) {
+      await message.reply(
+        `This channel isn't being watched. Use \`${config.commandPrefix} watch\` first.`
+      );
+      return;
+    }
+    const albumName = albumNameForChannel(message.channelId, channelName);
+    const albumId = await getOrCreateAlbumId(albumName);
+    const albumUrl = await getOrCreateAlbumShareUrl(albumId);
+    await message.reply(albumUrl);
     return;
   }
 
@@ -268,7 +288,12 @@ client.on(Events.MessageCreate, async (message) => {
 
   for (const attachment of message.attachments.values()) {
     try {
-      await handleAttachment(attachment, message.channelId, channelName, message.createdAt);
+      await handleAttachment(
+        attachment,
+        message.channelId,
+        channelName,
+        message.createdAt
+      );
     } catch (err) {
       console.error(`[error] Failed to sync attachment ${attachment.id}:`, err);
       // Optionally let the poster know their image didn't make it.

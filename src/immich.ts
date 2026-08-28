@@ -29,6 +29,13 @@ interface UploadResult {
   status: "created" | "duplicate";
 }
 
+interface ImmichSharedLink {
+  id: string;
+  key: string;
+  type: "INDIVIDUAL" | "ALBUM";
+  albumId?: string;
+}
+
 /**
  * Uploads a single image buffer to Immich.
  * deviceAssetId should be stable/unique per source file so re-processing the
@@ -77,6 +84,23 @@ async function createAlbum(albumName: string): Promise<ImmichAlbum> {
   return (await res.json()) as ImmichAlbum;
 }
 
+async function listSharedLinks(): Promise<ImmichSharedLink[]> {
+  const res = await immichFetch("/shared-links", {
+    method: "GET",
+    headers: authHeaders(),
+  });
+  return (await res.json()) as ImmichSharedLink[];
+}
+
+async function createAlbumSharedLink(albumId: string): Promise<ImmichSharedLink> {
+  const res = await immichFetch("/shared-links", {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ type: "ALBUM", albumId }),
+  });
+  return (await res.json()) as ImmichSharedLink;
+}
+
 export async function addAssetsToAlbum(albumId: string, assetIds: string[]): Promise<void> {
   await immichFetch(`/albums/${albumId}/assets`, {
     method: "PUT",
@@ -87,6 +111,7 @@ export async function addAssetsToAlbum(albumId: string, assetIds: string[]): Pro
 
 // In-memory cache so we don't hit /albums on every single image.
 const albumIdByName = new Map<string, string>();
+const albumShareUrlById = new Map<string, string>();
 
 export async function getOrCreateAlbumId(
   albumName: string,
@@ -105,4 +130,25 @@ export async function getOrCreateAlbumId(
   const created = await createAlbum(albumName);
   albumIdByName.set(albumName, created.id);
   return created.id;
+}
+
+export async function getOrCreateAlbumShareUrl(albumId: string): Promise<string> {
+  const cached = albumShareUrlById.get(albumId);
+  if (cached) return cached;
+
+  let existing: ImmichSharedLink | undefined;
+  try {
+    existing = (await listSharedLinks()).find(
+      (link) => link.type === "ALBUM" && link.albumId === albumId
+    );
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("sharedLink.read")) {
+      throw error;
+    }
+  }
+
+  const sharedLink = existing ?? (await createAlbumSharedLink(albumId));
+  const url = `${config.immich.baseUrl}/share/${sharedLink.key}`;
+  albumShareUrlById.set(albumId, url);
+  return url;
 }
