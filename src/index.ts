@@ -6,6 +6,7 @@ import {
   TextChannel,
   Message,
   PermissionsBitField,
+  ActivityType,
 } from "discord.js";
 import { config } from "./config.js";
 import { addAssetsToAlbum, getOrCreateAlbumId, uploadAsset } from "./immich.js";
@@ -199,6 +200,10 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 client.once(Events.ClientReady, async (readyClient) => {
+  readyClient.user.setActivity(
+    `${config.commandPrefix} help`,
+    { type: ActivityType.Custom }
+  );
   console.log(`Logged in as ${readyClient.user.tag}`);
   const dynamic = await listDynamicChannels();
   console.log(
