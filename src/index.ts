@@ -12,6 +12,8 @@ import { config } from "./config.js";
 import { addAssetsToAlbum, getOrCreateAlbumId, uploadAsset } from "./immich.js";
 import { addChannel, isDynamicallyWatched, listDynamicChannels, removeChannel } from "./watchlist.js";
 
+type AttachmentSyncStatus = "created" | "duplicate" | "skipped";
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -56,10 +58,10 @@ async function handleAttachment(
   channelId: string,
   channelName: string,
   createdAt: Date
-): Promise<void> {
-  if (!isMediaAttachment(attachment)) return;
-  if (config.minImageBytes > 0 && attachment.size < config.minImageBytes) return;
-  if (config.maxMediaBytes > 0 && attachment.size > config.maxMediaBytes) return;
+): Promise<AttachmentSyncStatus> {
+  if (!isMediaAttachment(attachment)) return "skipped";
+  if (config.minImageBytes > 0 && attachment.size < config.minImageBytes) return "skipped";
+  if (config.maxMediaBytes > 0 && attachment.size > config.maxMediaBytes) return "skipped";
 
   const response = await fetch(attachment.url);
   if (!response.ok) {
@@ -91,16 +93,21 @@ async function handleAttachment(
   console.log(
     `[sync] #${channelName} -> "${albumName}": ${attachment.name} (${upload.status})`
   );
+  return upload.status;
 }
 
 async function backfillChannel(channel: TextChannel): Promise<{
   media: number;
-  uploaded: number;
+  created: number;
+  duplicate: number;
+  skipped: number;
   failed: number;
 }> {
   let before: string | undefined;
   let media = 0;
-  let uploaded = 0;
+  let created = 0;
+  let duplicate = 0;
+  let skipped = 0;
   let failed = 0;
 
   while (true) {
@@ -112,13 +119,15 @@ async function backfillChannel(channel: TextChannel): Promise<{
       media += attachments.length;
       for (const attachment of attachments) {
         try {
-          await handleAttachment(
+          const status = await handleAttachment(
             attachment,
             channel.id,
             channel.name,
             message.createdAt
           );
-          uploaded++;
+          if (status === "created") created++;
+          else if (status === "duplicate") duplicate++;
+          else skipped++;
         } catch (err) {
           failed++;
           console.error(
@@ -134,7 +143,7 @@ async function backfillChannel(channel: TextChannel): Promise<{
     if (!before) break;
   }
 
-  return { media, uploaded, failed };
+  return { media, created, duplicate, skipped, failed };
 }
 
 /** Users need Manage Channels (or Administrator) to change what the bot watches. */
@@ -199,9 +208,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
     const progressMessage = await message.reply("Backfill started; scanning channel history...");
     const result = await backfillChannel(channel);
     await progressMessage.edit(
-      result.failed === 0
-        ? `Backfill complete: uploaded ${result.uploaded} of ${result.media} media attachment(s).`
-        : `Backfill complete: uploaded ${result.uploaded} of ${result.media} media attachment(s); ${result.failed} failed. Check the logs.`
+      `Backfill complete: ${result.created} new, ${result.duplicate} duplicate(s), ${result.skipped} skipped, ${result.failed} failed out of ${result.media} media attachment(s).`
     );
     return;
   }
