@@ -170,8 +170,8 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
         `\`${config.commandPrefix} help\` - Show this help message.`,
         `\`${config.commandPrefix} gallery\` - Get a public link to this channel's album.`,
         `\`${config.commandPrefix} watch [channel-or-category-id]\` - Start watching this channel, or the specified channel/category, for images and videos.`,
-        `\`${config.commandPrefix} backfill [channel-id]\` - Upload existing images and videos from this watched channel, or the specified channel.`,
-        `\`${config.commandPrefix} unwatch [channel-id]\` - Stop watching this channel, or the specified channel.`,
+        `\`${config.commandPrefix} backfill [channel-or-category-id]\` - Upload existing images and videos from this watched channel, or the specified channel/category.`,
+        `\`${config.commandPrefix} unwatch [channel-or-category-id]\` - Stop watching this channel, or the specified channel/category.`,
         `\`${config.commandPrefix} list\` - List all channels currently being watched.`,
       ].join("\n")
     );
@@ -275,10 +275,44 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       targetChannelId === message.channelId
         ? channel
         : await client.channels.fetch(targetChannelId).catch(() => null);
-    if (!(targetChannel instanceof TextChannel) || targetChannel.guildId !== message.guildId) {
-      await message.reply("Please specify a text channel in this server.");
+    if (!(targetChannel instanceof TextChannel || targetChannel instanceof CategoryChannel) || targetChannel.guildId !== message.guildId) {
+      await message.reply("Please specify a text channel or category in this server.");
       return;
     }
+
+    if (targetChannel instanceof CategoryChannel) {
+      // Only backfill watched text channels directly inside the category.
+      const textChannels = [...targetChannel.children.cache.values()].filter(
+        (child): child is TextChannel => child instanceof TextChannel
+      );
+      // isWatched is asynchronous because the dynamic watchlist is persisted on disk.
+      const channels = (await Promise.all(
+        textChannels.map(async (child) => (await isWatched(child.id)) ? child : null)
+      )).filter((child): child is TextChannel => child !== null);
+      if (channels.length === 0) {
+        await message.reply("That category has no watched text channels to backfill.");
+        return;
+      }
+
+      const progressMessage = await message.reply(
+        `Backfill started; scanning ${channels.length} channel(s) in **${targetChannel.name}**...`
+      );
+      const result = { media: 0, created: 0, duplicate: 0, skipped: 0, failed: 0 };
+      for (const child of channels) {
+        // Each channel is processed separately, then its counts are added to the total.
+        const channelResult = await backfillChannel(child);
+        result.media += channelResult.media;
+        result.created += channelResult.created;
+        result.duplicate += channelResult.duplicate;
+        result.skipped += channelResult.skipped;
+        result.failed += channelResult.failed;
+      }
+      await progressMessage.edit(
+        `Backfill complete: ${result.created} new, ${result.duplicate} duplicate(s), ${result.skipped} skipped, ${result.failed} failed out of ${result.media} media attachment(s).`
+      );
+      return;
+    }
+
     // Backfill is only allowed for channels that are already on the watchlist.
     if (!(await isWatched(targetChannelId))) {
       await message.reply(
@@ -311,10 +345,30 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       targetChannelId === message.channelId
         ? channel
         : await client.channels.fetch(targetChannelId).catch(() => null);
-    if (!(targetChannel instanceof TextChannel) || targetChannel.guildId !== message.guildId) {
-      await message.reply("Please specify a text channel in this server.");
+    if (!(targetChannel instanceof TextChannel || targetChannel instanceof CategoryChannel) || targetChannel.guildId !== message.guildId) {
+      await message.reply("Please specify a text channel or category in this server.");
       return;
     }
+
+    if (targetChannel instanceof CategoryChannel) {
+      // Remove dynamic entries for every text channel in the category.
+      const channels = [...targetChannel.children.cache.values()].filter(
+        (child): child is TextChannel => child instanceof TextChannel
+      );
+      let removedCount = 0;
+      for (const child of channels) {
+        // Static entries come from configuration and must remain there until manually changed.
+        if (config.watchedChannelIds.has(child.id)) continue;
+        if (await removeChannel(child.id)) removedCount++;
+      }
+      await message.reply(
+        removedCount > 0
+          ? `Stopped watching ${removedCount} text channel(s) in **${targetChannel.name}**.`
+          : `No dynamically watched text channels were found in **${targetChannel.name}**.`
+      );
+      return;
+    }
+
     // Static configuration is separate from the runtime watchlist, so it cannot be removed here.
     if (config.watchedChannelIds.has(targetChannelId)) {
       await message.reply(
