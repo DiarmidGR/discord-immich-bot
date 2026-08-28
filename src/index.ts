@@ -168,8 +168,8 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
         "**Immich bot commands**",
         `\`${config.commandPrefix} help\` - Show this help message.`,
         `\`${config.commandPrefix} gallery\` - Get a public link to this channel's album.`,
-        `\`${config.commandPrefix} watch\` - Start watching this channel for images and videos.`,
-        `\`${config.commandPrefix} backfill\` - Upload existing images and videos from this watched channel.`,
+        `\`${config.commandPrefix} watch [channel-id]\` - Start watching this channel, or the specified channel, for images and videos.`,
+        `\`${config.commandPrefix} backfill [channel-id]\` - Upload existing images and videos from this watched channel, or the specified channel.`,
         `\`${config.commandPrefix} unwatch\` - Stop watching this channel.`,
         `\`${config.commandPrefix} list\` - List all channels currently being watched.`,
       ].join("\n")
@@ -196,24 +196,34 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("You need the **Manage Channels** permission to do that.");
       return;
     }
-    if (config.watchedChannelIds.has(message.channelId)) {
-      await message.reply("This channel is already watched (configured at startup).");
-      return;
-    }
     if (!message.guildId) {
       await message.reply("This command can only be used in a server.");
       return;
     }
+    const targetChannelId = args[1] ?? message.channelId;
+    const targetChannel =
+      targetChannelId === message.channelId
+        ? channel
+        : await client.channels.fetch(targetChannelId).catch(() => null);
+    if (!(targetChannel instanceof TextChannel) || targetChannel.guildId !== message.guildId) {
+      await message.reply("Please specify a text channel in this server.");
+      return;
+    }
+    const targetChannelName = targetChannel.name;
+    if (config.watchedChannelIds.has(targetChannelId)) {
+      await message.reply(`#${targetChannelName} is already watched (configured at startup).`);
+      return;
+    }
     const added = await addChannel(
-      message.channelId,
+      targetChannelId,
       message.guildId,
-      channelName,
+      targetChannelName,
       message.author.tag
     );
     await message.reply(
       added
-        ? `Now watching #${channelName} — images and videos posted here will sync to Immich. Use \`${config.commandPrefix} backfill\` to upload existing media too.`
-        : "This channel is already being watched."
+        ? `Now watching #${targetChannelName} — images and videos posted here will sync to Immich. Use \`${config.commandPrefix} backfill\` in that channel to upload existing media too.`
+        : `#${targetChannelName} is already being watched.`
     );
     return;
   }
@@ -223,19 +233,28 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("You need the **Manage Channels** permission to do that.");
       return;
     }
-    if (!(await isWatched(message.channelId))) {
-      await message.reply(
-        `This channel isn't being watched. Use \`${config.commandPrefix} watch\` first.`
-      );
+    if (!message.guildId) {
+      await message.reply("This command can only be used in a server.");
       return;
     }
-    if (!channel.messages) {
-      await message.reply("I can only backfill text channels.");
+    const targetChannelId = args[1] ?? message.channelId;
+    const targetChannel =
+      targetChannelId === message.channelId
+        ? channel
+        : await client.channels.fetch(targetChannelId).catch(() => null);
+    if (!(targetChannel instanceof TextChannel) || targetChannel.guildId !== message.guildId) {
+      await message.reply("Please specify a text channel in this server.");
+      return;
+    }
+    if (!(await isWatched(targetChannelId))) {
+      await message.reply(
+        `#${targetChannel.name} isn't being watched. Use \`${config.commandPrefix} watch ${targetChannelId}\` first.`
+      );
       return;
     }
 
     const progressMessage = await message.reply("Backfill started; scanning channel history...");
-    const result = await backfillChannel(channel);
+    const result = await backfillChannel(targetChannel);
     await progressMessage.edit(
       `Backfill complete: ${result.created} new, ${result.duplicate} duplicate(s), ${result.skipped} skipped, ${result.failed} failed out of ${result.media} media attachment(s).`
     );
