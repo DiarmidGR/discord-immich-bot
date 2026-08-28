@@ -19,9 +19,14 @@ the bot replies with a public link to that channel's album.
 
 2. **Get an Immich API key**
    - In the Immich web UI: Account Settings -> API Keys -> New API Key.
-  - Grant the key `sharedLink.create` to enable public album links. Grant
-    `sharedLink.read` too if you want the bot to reuse existing links after a
-    restart; without it, the bot creates a new link once per album per run.
+   - Grant the key these permissions:
+     - `asset.upload` to upload attachments.
+     - `album.read` to find existing channel albums.
+     - `album.create` to create channel albums that do not exist yet.
+     - `album.update` to add uploaded assets to channel albums.
+     - `sharedLink.create` to create public album links for the `gallery` command.
+    - Grant `sharedLink.read` too if you want the bot to reuse existing links after
+     a restart; without it, the bot creates a new link once per album per run.
 
 3. **Get your channel IDs**
    - Discord app -> User Settings -> Advanced -> enable Developer Mode.
