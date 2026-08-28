@@ -10,9 +10,11 @@ channel (auto-created if it doesn't exist yet).
    - Go to https://discord.com/developers/applications -> New Application.
    - Bot tab -> Reset Token, copy it for `DISCORD_TOKEN`.
    - Bot tab -> enable **Message Content Intent** (required to read attachments).
-   - OAuth2 -> URL Generator -> scopes: `bot`. Permissions: `View Channels`,
-     `Read Message History`, `Add Reactions` (used to flag failed uploads).
-     Use the generated URL to invite the bot to your server.
+   - OAuth2 -> URL Generator -> scope: `bot`. Bot permissions: `View Channels`,
+     `Send Messages`, `Read Message History`, and `Add Reactions` (used to flag
+     failed uploads). Use the generated URL to invite the bot to your server.
+   - Users who run `watch`, `backfill`, or `unwatch` need the **Manage Channels**
+     permission; the bot itself does not need it.
 
 2. **Get an Immich API key**
    - In the Immich web UI: Account Settings -> API Keys -> New API Key.
