@@ -170,7 +170,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
         `\`${config.commandPrefix} gallery\` - Get a public link to this channel's album.`,
         `\`${config.commandPrefix} watch [channel-id]\` - Start watching this channel, or the specified channel, for images and videos.`,
         `\`${config.commandPrefix} backfill [channel-id]\` - Upload existing images and videos from this watched channel, or the specified channel.`,
-        `\`${config.commandPrefix} unwatch\` - Stop watching this channel.`,
+        `\`${config.commandPrefix} unwatch [channel-id]\` - Stop watching this channel, or the specified channel.`,
         `\`${config.commandPrefix} list\` - List all channels currently being watched.`,
       ].join("\n")
     );
@@ -222,7 +222,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
     );
     await message.reply(
       added
-        ? `Now watching #${targetChannelName} — images and videos posted here will sync to Immich. Use \`${config.commandPrefix} backfill\` in that channel to upload existing media too.`
+        ? `Now watching #${targetChannelName} — images and videos posted here will sync to Immich. Use \`${config.commandPrefix} backfill\` to upload existing media too.`
         : `#${targetChannelName} is already being watched.`
     );
     return;
@@ -266,15 +266,28 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("You need the **Manage Channels** permission to do that.");
       return;
     }
-    if (config.watchedChannelIds.has(message.channelId)) {
+    if (!message.guildId) {
+      await message.reply("This command can only be used in a server.");
+      return;
+    }
+    const targetChannelId = args[1] ?? message.channelId;
+    const targetChannel =
+      targetChannelId === message.channelId
+        ? channel
+        : await client.channels.fetch(targetChannelId).catch(() => null);
+    if (!(targetChannel instanceof TextChannel) || targetChannel.guildId !== message.guildId) {
+      await message.reply("Please specify a text channel in this server.");
+      return;
+    }
+    if (config.watchedChannelIds.has(targetChannelId)) {
       await message.reply(
         "This channel is watched via static config (`WATCHED_CHANNEL_IDS`), not a runtime command — remove it there instead."
       );
       return;
     }
-    const removed = await removeChannel(message.channelId);
+    const removed = await removeChannel(targetChannelId);
     await message.reply(
-      removed ? `Stopped watching #${channelName}.` : "This channel wasn't being watched."
+      removed ? `Stopped watching #${targetChannel.name}.` : `#${targetChannel.name} wasn't being watched.`
     );
     return;
   }
