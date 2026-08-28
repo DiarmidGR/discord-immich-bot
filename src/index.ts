@@ -200,7 +200,16 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("This channel is already watched (configured at startup).");
       return;
     }
-    const added = await addChannel(message.channelId, channelName, message.author.tag);
+    if (!message.guildId) {
+      await message.reply("This command can only be used in a server.");
+      return;
+    }
+    const added = await addChannel(
+      message.channelId,
+      message.guildId,
+      channelName,
+      message.author.tag
+    );
     await message.reply(
       added
         ? `Now watching #${channelName} — images and videos posted here will sync to Immich. Use \`${config.commandPrefix} backfill\` to upload existing media too.`
@@ -252,9 +261,29 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
   }
 
   if (subcommand === "list") {
+    if (!message.guildId) {
+      await message.reply("This command can only be used in a server.");
+      return;
+    }
     const dynamic = await listDynamicChannels();
-    const staticList = [...config.watchedChannelIds].map((id) => `<#${id}> (static)`);
-    const dynamicList = dynamic.map((e) => `<#${e.channelId}> (added by ${e.addedBy})`);
+    const staticList = (await Promise.all(
+      [...config.watchedChannelIds].map(async (id) => {
+        const watchedChannel = await client.channels.fetch(id).catch(() => null);
+        return watchedChannel && "guildId" in watchedChannel && watchedChannel.guildId === message.guildId
+          ? `<#${id}> (static)`
+          : null;
+      })
+    )).filter((entry): entry is string => entry !== null);
+    const dynamicList = (await Promise.all(
+      dynamic.map(async (entry) => {
+        if (entry.guildId === message.guildId) return `<#${entry.channelId}> (added by ${entry.addedBy})`;
+        if (entry.guildId) return null;
+        const watchedChannel = await client.channels.fetch(entry.channelId).catch(() => null);
+        return watchedChannel && "guildId" in watchedChannel && watchedChannel.guildId === message.guildId
+          ? `<#${entry.channelId}> (added by ${entry.addedBy})`
+          : null;
+      })
+    )).filter((entry): entry is string => entry !== null);
     const all = [...staticList, ...dynamicList];
     await message.reply(all.length > 0 ? `Watching:\n${all.join("\n")}` : "No channels are currently watched.");
     return;

@@ -4,6 +4,7 @@ import { config } from "./config.js";
 
 interface WatchlistEntry {
   channelId: string;
+  guildId?: string;
   channelName: string;
   addedBy: string;
   addedAt: string;
@@ -44,12 +45,19 @@ export async function isDynamicallyWatched(channelId: string): Promise<boolean> 
 /** Returns false if the channel was already being watched. */
 export async function addChannel(
   channelId: string,
+  guildId: string,
   channelName: string,
   addedBy: string
 ): Promise<boolean> {
   await ensureLoaded();
   if (entries.has(channelId)) return false;
-  entries.set(channelId, { channelId, channelName, addedBy, addedAt: new Date().toISOString() });
+  entries.set(channelId, {
+    channelId,
+    guildId,
+    channelName,
+    addedBy,
+    addedAt: new Date().toISOString(),
+  });
   await persist();
   return true;
 }
