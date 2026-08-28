@@ -59,6 +59,24 @@ async function isWatched(channelId: string): Promise<boolean> {
   return isDynamicallyWatched(channelId);
 }
 
+async function isCategoryWatched(categoryId: string, guildId: string): Promise<boolean> {
+  // A category is considered watched when at least one of its existing channels is watched.
+  for (const channelId of config.watchedChannelIds) {
+    const channel = await client.channels.fetch(channelId).catch(() => null);
+    if (channel instanceof TextChannel && channel.guildId === guildId && channel.parentId === categoryId) {
+      return true;
+    }
+  }
+
+  const dynamicChannels = await listDynamicChannels();
+  for (const entry of dynamicChannels) {
+    if (entry.guildId !== guildId) continue;
+    const channel = await client.channels.fetch(entry.channelId).catch(() => null);
+    if (channel instanceof TextChannel && channel.parentId === categoryId) return true;
+  }
+  return false;
+}
+
 async function handleAttachment(
   attachment: Attachment,
   channelId: string,
@@ -451,6 +469,23 @@ client.on(Events.MessageCreate, async (message) => {
       // Optionally let the poster know their image didn't make it.
       await message.react("⚠️").catch(() => {});
     }
+  }
+});
+
+client.on(Events.ChannelCreate, async (createdChannel) => {
+  // New channels without a parent are not inside a category, so there is nothing to inherit.
+  if (!(createdChannel instanceof TextChannel) || !createdChannel.parentId) return;
+  if (!(await isCategoryWatched(createdChannel.parentId, createdChannel.guildId))) return;
+
+  // Persist the new channel so future messages are handled like the other watched channels.
+  const added = await addChannel(
+    createdChannel.id,
+    createdChannel.guildId,
+    createdChannel.name,
+    "category auto-watch"
+  );
+  if (added) {
+    console.log(`[watchlist] Automatically watching new channel #${createdChannel.name}.`);
   }
 });
 
