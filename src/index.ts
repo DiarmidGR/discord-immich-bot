@@ -103,6 +103,19 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
   const channel = message.channel as TextChannel;
   const channelName = "name" in channel ? channel.name : message.channelId;
 
+  if (subcommand === "help") {
+    await message.reply(
+      [
+        "**Immich bot commands**",
+        `\`${config.commandPrefix} help\` - Show this help message.`,
+        `\`${config.commandPrefix} watch\` - Start watching this channel for images and videos.`,
+        `\`${config.commandPrefix} unwatch\` - Stop watching this channel.`,
+        `\`${config.commandPrefix} list\` - List all channels currently being watched.`,
+      ].join("\n")
+    );
+    return;
+  }
+
   if (subcommand === "watch") {
     if (!canManageWatchlist(message)) {
       await message.reply("You need the **Manage Channels** permission to do that.");
@@ -149,7 +162,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
   }
 
   await message.reply(
-    `Usage: \`${config.commandPrefix} watch\` | \`${config.commandPrefix} unwatch\` | \`${config.commandPrefix} list\``
+    `Unknown command. Use \`${config.commandPrefix} help\` to see all commands.`
   );
 }
 
