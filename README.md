@@ -23,11 +23,11 @@ channel (auto-created if it doesn't exist yet).
 
 4. **Configure**
    ```bash
-   cp .env.example .env
-   # then fill in DISCORD_TOKEN, WATCHED_CHANNEL_IDS, IMMICH_URL, IMMICH_API_KEY
+  cp .env.example .env
+  # then fill in DISCORD_TOKEN, WATCHED_CHANNEL_IDS, IMMICH_URL, and IMMICH_API_KEY
    ```
 
-5. **Run**
+5. **Run locally**
    ```bash
    npm install
    npm run dev      # ts-node style, for testing
@@ -35,6 +35,74 @@ channel (auto-created if it doesn't exist yet).
    npm run build
    npm start
    ```
+
+### Docker deployment
+
+For a production deployment, create a `.env` file in the same directory as
+`docker-compose.yml` with the required values. The Compose example below
+builds the image locally:
+
+```dotenv
+DISCORD_TOKEN=your-discord-token
+WATCHED_CHANNEL_IDS=channel-id-1,channel-id-2
+IMMICH_URL=https://immich.example.com
+IMMICH_API_KEY=your-immich-api-key
+```
+
+The optional settings below can also be added to `.env`:
+
+```dotenv
+CHANNEL_ALBUM_OVERRIDES={}
+MIN_IMAGE_BYTES=0
+MAX_MEDIA_BYTES=0
+COMMAND_PREFIX=!immich-bot
+```
+
+Save this as `docker-compose.yml`:
+
+```yaml
+services:
+  discord-immich-bot:
+    build: .
+    container_name: discord-immich-bot
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - WATCHED_CHANNEL_IDS=${WATCHED_CHANNEL_IDS:-}
+      - IMMICH_URL=${IMMICH_URL}
+      - IMMICH_API_KEY=${IMMICH_API_KEY}
+      - CHANNEL_ALBUM_OVERRIDES=${CHANNEL_ALBUM_OVERRIDES:-{}}
+      - MIN_IMAGE_BYTES=${MIN_IMAGE_BYTES:-0}
+      - MAX_MEDIA_BYTES=${MAX_MEDIA_BYTES:-0}
+      - COMMAND_PREFIX=${COMMAND_PREFIX:-!immich-bot}
+    volumes:
+      - immich_bot_data:/data
+
+volumes:
+  immich_bot_data:
+```
+
+If you publish the image to your own registry, replace `build: .` with an
+`image` entry, for example:
+
+```yaml
+    image: your-registry.example/discord-immich-bot:latest
+```
+
+Build or pull the image and start the bot in the background:
+
+```bash
+# With build: .
+docker compose up -d --build
+
+# With image: your-registry.example/discord-immich-bot:latest
+docker compose pull
+docker compose up -d
+```
+
+View logs with `docker compose logs -f`, and stop the deployment with
+`docker compose down`. The named `immich_bot_data` volume keeps the runtime
+watchlist when the container is recreated or updated.
 
 ## How album naming works
 
@@ -74,8 +142,7 @@ count when it finishes. Immich's stable asset IDs make rerunning it safe.
 - Re-uploading the same file (e.g. after restarting the bot) won't create a
   duplicate: Immich dedupes by file checksum server-side.
 - Running this continuously means keeping a Node process alive — pm2, a
-  systemd service, or a small Docker container all work well. Ask if you'd
-  like a Dockerfile or systemd unit for your setup.
+  systemd service, or Docker all work well.
 - Immich's API has changed across versions before; if uploads start failing
   with 4xx errors after an Immich upgrade, check your server's own API docs
   at `<your-immich-url>/api/docs` — endpoint field names occasionally shift.
