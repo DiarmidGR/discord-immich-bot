@@ -137,6 +137,8 @@ prefix in a server text channel:
   target channel must be in the same server as the command.
 - `watch <category-id>` starts syncing all text channels directly inside the
   specified category. The category must be in the same server as the command.
+  New text channels created directly inside a watched category are added
+  automatically.
 - `backfill` scans the command channel's history and uploads its existing images
   and videos into the channel's Immich album.
 - `backfill <channel-id>` scans the specified watched text channel instead. The
