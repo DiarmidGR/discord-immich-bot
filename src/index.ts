@@ -3,6 +3,7 @@ import {
   GatewayIntentBits,
   Events,
   Attachment,
+  CategoryChannel,
   TextChannel,
   Message,
   PermissionsBitField,
@@ -168,7 +169,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
         "**Immich bot commands**",
         `\`${config.commandPrefix} help\` - Show this help message.`,
         `\`${config.commandPrefix} gallery\` - Get a public link to this channel's album.`,
-        `\`${config.commandPrefix} watch [channel-id]\` - Start watching this channel, or the specified channel, for images and videos.`,
+        `\`${config.commandPrefix} watch [channel-or-category-id]\` - Start watching this channel, or the specified channel/category, for images and videos.`,
         `\`${config.commandPrefix} backfill [channel-id]\` - Upload existing images and videos from this watched channel, or the specified channel.`,
         `\`${config.commandPrefix} unwatch [channel-id]\` - Stop watching this channel, or the specified channel.`,
         `\`${config.commandPrefix} list\` - List all channels currently being watched.`,
@@ -200,15 +201,45 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("This command can only be used in a server.");
       return;
     }
+    // With no ID, keep the original behavior and target the channel containing the command.
     const targetChannelId = args[1] ?? message.channelId;
+    // The current channel is already available; otherwise fetch the ID supplied by the user.
     const targetChannel =
       targetChannelId === message.channelId
         ? channel
         : await client.channels.fetch(targetChannelId).catch(() => null);
-    if (!(targetChannel instanceof TextChannel) || targetChannel.guildId !== message.guildId) {
-      await message.reply("Please specify a text channel in this server.");
+    // This check also narrows targetChannel to a TextChannel or CategoryChannel below.
+    if (!(targetChannel instanceof TextChannel || targetChannel instanceof CategoryChannel) || targetChannel.guildId !== message.guildId) {
+      await message.reply("Please specify a text channel or category in this server.");
       return;
     }
+
+    if (targetChannel instanceof CategoryChannel) {
+      // A category can contain several channel types, but only text channels receive messages.
+      const channels = [...targetChannel.children.cache.values()].filter(
+        (child): child is TextChannel => child instanceof TextChannel
+      );
+      if (channels.length === 0) {
+        await message.reply("That category has no text channels to watch.");
+        return;
+      }
+      let addedCount = 0;
+      for (const child of channels) {
+        // Static channels are configured at startup and cannot be removed by runtime commands.
+        if (config.watchedChannelIds.has(child.id)) continue;
+        // addChannel persists each child independently in the dynamic watchlist.
+        if (await addChannel(child.id, message.guildId, child.name, message.author.tag)) {
+          addedCount++;
+        }
+      }
+      await message.reply(
+        addedCount > 0
+          ? `Now watching ${addedCount} text channel(s) in **${targetChannel.name}**.`
+          : `All text channels in **${targetChannel.name}** are already being watched.`
+      );
+      return;
+    }
+
     const targetChannelName = targetChannel.name;
     if (config.watchedChannelIds.has(targetChannelId)) {
       await message.reply(`#${targetChannelName} is already watched (configured at startup).`);
@@ -237,7 +268,9 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("This command can only be used in a server.");
       return;
     }
+    // A missing ID means backfill the channel where the command was sent.
     const targetChannelId = args[1] ?? message.channelId;
+    // Fetch another channel only when the user supplied a different ID.
     const targetChannel =
       targetChannelId === message.channelId
         ? channel
@@ -246,6 +279,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("Please specify a text channel in this server.");
       return;
     }
+    // Backfill is only allowed for channels that are already on the watchlist.
     if (!(await isWatched(targetChannelId))) {
       await message.reply(
         `#${targetChannel.name} isn't being watched. Use \`${config.commandPrefix} watch ${targetChannelId}\` first.`
@@ -270,7 +304,9 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("This command can only be used in a server.");
       return;
     }
+    // Fall back to the command channel so bare `unwatch` remains unchanged.
     const targetChannelId = args[1] ?? message.channelId;
+    // Resolve a supplied ID through Discord and reject channels from another server.
     const targetChannel =
       targetChannelId === message.channelId
         ? channel
@@ -279,6 +315,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("Please specify a text channel in this server.");
       return;
     }
+    // Static configuration is separate from the runtime watchlist, so it cannot be removed here.
     if (config.watchedChannelIds.has(targetChannelId)) {
       await message.reply(
         "This channel is watched via static config (`WATCHED_CHANNEL_IDS`), not a runtime command — remove it there instead."
