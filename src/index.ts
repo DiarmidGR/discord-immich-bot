@@ -93,6 +93,50 @@ async function handleAttachment(
   );
 }
 
+async function backfillChannel(channel: TextChannel): Promise<{
+  media: number;
+  uploaded: number;
+  failed: number;
+}> {
+  let before: string | undefined;
+  let media = 0;
+  let uploaded = 0;
+  let failed = 0;
+
+  while (true) {
+    const messages = await channel.messages.fetch({ limit: 100, before });
+    if (messages.size === 0) break;
+
+    for (const message of [...messages.values()].reverse()) {
+      const attachments = [...message.attachments.values()].filter(isMediaAttachment);
+      media += attachments.length;
+      for (const attachment of attachments) {
+        try {
+          await handleAttachment(
+            attachment,
+            channel.id,
+            channel.name,
+            message.createdAt
+          );
+          uploaded++;
+        } catch (err) {
+          failed++;
+          console.error(
+            `[error] Failed to backfill attachment ${attachment.id}:`,
+            err
+          );
+        }
+      }
+    }
+
+    if (messages.size < 100) break;
+    before = messages.last()?.id;
+    if (!before) break;
+  }
+
+  return { media, uploaded, failed };
+}
+
 /** Users need Manage Channels (or Administrator) to change what the bot watches. */
 function canManageWatchlist(message: Message): boolean {
   if (!message.member) return false;
@@ -110,6 +154,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
         "**Immich bot commands**",
         `\`${config.commandPrefix} help\` - Show this help message.`,
         `\`${config.commandPrefix} watch\` - Start watching this channel for images and videos.`,
+        `\`${config.commandPrefix} backfill\` - Upload existing images and videos from this watched channel.`,
         `\`${config.commandPrefix} unwatch\` - Stop watching this channel.`,
         `\`${config.commandPrefix} list\` - List all channels currently being watched.`,
       ].join("\n")
@@ -129,8 +174,34 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
     const added = await addChannel(message.channelId, channelName, message.author.tag);
     await message.reply(
       added
-        ? `Now watching #${channelName} — images and videos posted here will sync to Immich.`
+        ? `Now watching #${channelName} — images and videos posted here will sync to Immich. Use \`${config.commandPrefix} backfill\` to upload existing media too.`
         : "This channel is already being watched."
+    );
+    return;
+  }
+
+  if (subcommand === "backfill") {
+    if (!canManageWatchlist(message)) {
+      await message.reply("You need the **Manage Channels** permission to do that.");
+      return;
+    }
+    if (!(await isWatched(message.channelId))) {
+      await message.reply(
+        `This channel isn't being watched. Use \`${config.commandPrefix} watch\` first.`
+      );
+      return;
+    }
+    if (!channel.messages) {
+      await message.reply("I can only backfill text channels.");
+      return;
+    }
+
+    const progressMessage = await message.reply("Backfill started; scanning channel history...");
+    const result = await backfillChannel(channel);
+    await progressMessage.edit(
+      result.failed === 0
+        ? `Backfill complete: uploaded ${result.uploaded} of ${result.media} media attachment(s).`
+        : `Backfill complete: uploaded ${result.uploaded} of ${result.media} media attachment(s); ${result.failed} failed. Check the logs.`
     );
     return;
   }

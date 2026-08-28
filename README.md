@@ -47,6 +47,20 @@ JSON object mapping channel ID -> desired album name, e.g.:
 CHANNEL_ALBUM_OVERRIDES={"123456789012345678":"Family Photos"}
 ```
 
+## Commands
+
+Users with the **Manage Channels** permission can use the configured command
+prefix in a watched text channel:
+
+- `watch` starts syncing new images and videos from the channel and offers the
+  `backfill` command for existing media.
+- `backfill` scans the channel history and uploads its existing images and
+  videos into the channel's Immich album.
+- `unwatch` stops runtime watching, and `list` shows watched channels.
+
+Backfill continues when an individual attachment fails and reports the failed
+count when it finishes. Immich's stable asset IDs make rerunning it safe.
+
 ## Notes / things worth knowing
 
 - Only channels listed in `WATCHED_CHANNEL_IDS` are touched — the bot ignores
