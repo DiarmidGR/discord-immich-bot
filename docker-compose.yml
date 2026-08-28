@@ -1,0 +1,7 @@
+services:
+  discord-immich-bot:
+    build: .
+    container_name: discord-immich-bot
+    restart: unless-stopped
+    env_file:
+      - .env
