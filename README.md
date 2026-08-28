@@ -129,15 +129,23 @@ CHANNEL_ALBUM_OVERRIDES={"123456789012345678":"Family Photos"}
 ## Commands
 
 Users with the **Manage Channels** permission can use the configured command
-prefix in a watched text channel:
+prefix in a server text channel:
 
-- `watch` starts syncing new images and videos from the channel and offers the
-  `backfill` command for existing media.
-- `backfill` scans the channel history and uploads its existing images and
-  videos into the channel's Immich album.
+- `watch` starts syncing new images and videos from the channel where the
+  command is sent and offers the `backfill` command for existing media.
+- `watch <channel-id>` starts syncing the specified text channel instead. The
+  target channel must be in the same server as the command.
+- `watch <category-id>` starts syncing all text channels directly inside the
+  specified category. The category must be in the same server as the command.
+- `backfill` scans the command channel's history and uploads its existing images
+  and videos into the channel's Immich album.
+- `backfill <channel-id>` scans the specified watched text channel instead. The
+  target channel must be in the same server as the command.
 - `list` shows watched channels in the current server.
 - `gallery` replies with a public link to the current channel's album.
-- `unwatch` stops runtime watching, and `list` shows watched channels.
+- `unwatch` stops runtime watching for the command channel.
+- `unwatch <channel-id>` stops runtime watching for the specified text channel.
+  The target channel must be in the same server as the command.
 
 Backfill continues when an individual attachment fails and reports the failed
 count when it finishes. Immich's stable asset IDs make rerunning it safe.
