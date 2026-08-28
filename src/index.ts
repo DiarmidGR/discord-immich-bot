@@ -1,6 +1,15 @@
-import { Client, GatewayIntentBits, Events, Attachment, TextChannel } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  Events,
+  Attachment,
+  TextChannel,
+  Message,
+  PermissionsBitField,
+} from "discord.js";
 import { config } from "./config.js";
 import { addAssetsToAlbum, getOrCreateAlbumId, uploadAsset } from "./immich.js";
+import { addChannel, isDynamicallyWatched, listDynamicChannels, removeChannel } from "./watchlist.js";
 
 const client = new Client({
   intents: [
@@ -32,6 +41,15 @@ function albumNameForChannel(channelId: string, channelName: string): string {
   return config.channelAlbumOverrides[channelId] ?? prettifyChannelName(channelName);
 }
 
+function isMissingAlbumError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('"message":"Album not found"');
+}
+
+async function isWatched(channelId: string): Promise<boolean> {
+  if (config.watchedChannelIds.has(channelId)) return true;
+  return isDynamicallyWatched(channelId);
+}
+
 async function handleAttachment(
   attachment: Attachment,
   channelId: string,
@@ -59,16 +77,98 @@ async function handleAttachment(
   });
 
   const albumName = albumNameForChannel(channelId, channelName);
-  const albumId = await getOrCreateAlbumId(albumName);
-  await addAssetsToAlbum(albumId, [upload.id]);
+  let albumId = await getOrCreateAlbumId(albumName);
+  try {
+    await addAssetsToAlbum(albumId, [upload.id]);
+  } catch (error) {
+    if (!isMissingAlbumError(error)) throw error;
+    console.warn(`[sync] Album "${albumName}" was not found; recreating it.`);
+    albumId = await getOrCreateAlbumId(albumName, { refresh: true });
+    await addAssetsToAlbum(albumId, [upload.id]);
+  }
 
   console.log(
     `[sync] #${channelName} -> "${albumName}": ${attachment.name} (${upload.status})`
   );
 }
 
+/** Users need Manage Channels (or Administrator) to change what the bot watches. */
+function canManageWatchlist(message: Message): boolean {
+  if (!message.member) return false;
+  return message.member.permissions.has(PermissionsBitField.Flags.ManageChannels);
+}
+
+async function handleCommand(message: Message, args: string[]): Promise<void> {
+  const subcommand = args[0]?.toLowerCase();
+  const channel = message.channel as TextChannel;
+  const channelName = "name" in channel ? channel.name : message.channelId;
+
+  if (subcommand === "watch") {
+    if (!canManageWatchlist(message)) {
+      await message.reply("You need the **Manage Channels** permission to do that.");
+      return;
+    }
+    if (config.watchedChannelIds.has(message.channelId)) {
+      await message.reply("This channel is already watched (configured at startup).");
+      return;
+    }
+    const added = await addChannel(message.channelId, channelName, message.author.tag);
+    await message.reply(
+      added
+        ? `Now watching #${channelName} — images and videos posted here will sync to Immich.`
+        : "This channel is already being watched."
+    );
+    return;
+  }
+
+  if (subcommand === "unwatch") {
+    if (!canManageWatchlist(message)) {
+      await message.reply("You need the **Manage Channels** permission to do that.");
+      return;
+    }
+    if (config.watchedChannelIds.has(message.channelId)) {
+      await message.reply(
+        "This channel is watched via static config (`WATCHED_CHANNEL_IDS`), not a runtime command — remove it there instead."
+      );
+      return;
+    }
+    const removed = await removeChannel(message.channelId);
+    await message.reply(
+      removed ? `Stopped watching #${channelName}.` : "This channel wasn't being watched."
+    );
+    return;
+  }
+
+  if (subcommand === "list") {
+    const dynamic = await listDynamicChannels();
+    const staticList = [...config.watchedChannelIds].map((id) => `<#${id}> (static)`);
+    const dynamicList = dynamic.map((e) => `<#${e.channelId}> (added by ${e.addedBy})`);
+    const all = [...staticList, ...dynamicList];
+    await message.reply(all.length > 0 ? `Watching:\n${all.join("\n")}` : "No channels are currently watched.");
+    return;
+  }
+
+  await message.reply(
+    `Usage: \`${config.commandPrefix} watch\` | \`${config.commandPrefix} unwatch\` | \`${config.commandPrefix} list\``
+  );
+}
+
 client.on(Events.MessageCreate, async (message) => {
-  if (!config.watchedChannelIds.has(message.channelId)) return;
+  if (message.author.bot) return;
+
+  const trimmed = message.content.trim();
+  if (trimmed.toLowerCase().startsWith(config.commandPrefix.toLowerCase())) {
+    const args = trimmed.slice(config.commandPrefix.length).trim().split(/\s+/).filter(Boolean);
+    try {
+      await handleCommand(message, args);
+    } catch (err) {
+      console.error("[error] Failed to handle command:", err);
+      await message.reply("Something went wrong running that command — check the logs.").catch(() => {});
+    }
+    return;
+  }
+
+  if (!(await isWatched(message.channelId))) return;
   if (message.attachments.size === 0) return;
 
   const channel = message.channel as TextChannel;
@@ -85,9 +185,12 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-client.once(Events.ClientReady, (readyClient) => {
+client.once(Events.ClientReady, async (readyClient) => {
   console.log(`Logged in as ${readyClient.user.tag}`);
-  console.log(`Watching ${config.watchedChannelIds.size} channel(s): ${[...config.watchedChannelIds].join(", ")}`);
+  const dynamic = await listDynamicChannels();
+  console.log(
+    `Watching ${config.watchedChannelIds.size} static + ${dynamic.length} dynamic channel(s)`
+  );
 });
 
 client.login(config.discordToken);

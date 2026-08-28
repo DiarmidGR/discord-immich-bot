@@ -25,8 +25,10 @@ function parseChannelOverrides(raw: string | undefined): Record<string, string> 
 
 export const config = {
   discordToken: required("DISCORD_TOKEN"),
+  // Baseline channels watched from boot. Optional now — channels can also be
+  // added/removed at runtime via the !immich-bot watch/unwatch commands.
   watchedChannelIds: new Set(
-    required("WATCHED_CHANNEL_IDS")
+    (process.env.WATCHED_CHANNEL_IDS ?? "")
       .split(",")
       .map((id) => id.trim())
       .filter(Boolean)
@@ -38,8 +40,8 @@ export const config = {
   channelAlbumOverrides: parseChannelOverrides(process.env.CHANNEL_ALBUM_OVERRIDES),
   minImageBytes: Number(process.env.MIN_IMAGE_BYTES ?? "0"),
   maxMediaBytes: Number(process.env.MAX_MEDIA_BYTES ?? "0"),
+  commandPrefix: process.env.COMMAND_PREFIX ?? "!immich-bot",
+  // Where the dynamically-added watchlist is persisted. Put this on a mounted
+  // volume in Docker so it survives container restarts/updates.
+  watchlistPath: process.env.WATCHLIST_PATH ?? "/data/watched-channels.json",
 };
-
-if (config.watchedChannelIds.size === 0) {
-  throw new Error("WATCHED_CHANNEL_IDS must contain at least one channel ID");
-}

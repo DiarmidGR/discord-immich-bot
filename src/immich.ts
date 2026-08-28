@@ -88,8 +88,11 @@ export async function addAssetsToAlbum(albumId: string, assetIds: string[]): Pro
 // In-memory cache so we don't hit /albums on every single image.
 const albumIdByName = new Map<string, string>();
 
-export async function getOrCreateAlbumId(albumName: string): Promise<string> {
-  const cached = albumIdByName.get(albumName);
+export async function getOrCreateAlbumId(
+  albumName: string,
+  options: { refresh?: boolean } = {}
+): Promise<string> {
+  const cached = options.refresh ? undefined : albumIdByName.get(albumName);
   if (cached) return cached;
 
   const albums = await listAlbums();
