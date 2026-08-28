@@ -22,10 +22,10 @@ channel (auto-created if it doesn't exist yet).
    - Right-click each channel you want watched -> Copy Channel ID.
 
 4. **Configure**
-   ```bash
+    ```bash
   cp .env.example .env
   # then fill in DISCORD_TOKEN, WATCHED_CHANNEL_IDS, IMMICH_URL, and IMMICH_API_KEY
-   ```
+    ```
 
 5. **Run locally**
    ```bash
