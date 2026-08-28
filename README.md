@@ -141,11 +141,16 @@ prefix in a server text channel:
   and videos into the channel's Immich album.
 - `backfill <channel-id>` scans the specified watched text channel instead. The
   target channel must be in the same server as the command.
+- `backfill <category-id>` scans all watched text channels directly inside the
+  specified category. The category must be in the same server as the command.
 - `list` shows watched channels in the current server.
 - `gallery` replies with a public link to the current channel's album.
 - `unwatch` stops runtime watching for the command channel.
 - `unwatch <channel-id>` stops runtime watching for the specified text channel.
   The target channel must be in the same server as the command.
+- `unwatch <category-id>` stops runtime watching for all text channels directly
+  inside the specified category. Static `WATCHED_CHANNEL_IDS` entries are not
+  removed.
 
 Backfill continues when an individual attachment fails and reports the failed
 count when it finishes. Immich's stable asset IDs make rerunning it safe.
