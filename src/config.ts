@@ -37,6 +37,7 @@ export const config = {
   },
   channelAlbumOverrides: parseChannelOverrides(process.env.CHANNEL_ALBUM_OVERRIDES),
   minImageBytes: Number(process.env.MIN_IMAGE_BYTES ?? "0"),
+  maxMediaBytes: Number(process.env.MAX_MEDIA_BYTES ?? "0"),
 };
 
 if (config.watchedChannelIds.size === 0) {

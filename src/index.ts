@@ -10,10 +10,13 @@ const client = new Client({
   ],
 });
 
-function isImageAttachment(attachment: Attachment): boolean {
+function isMediaAttachment(attachment: Attachment): boolean {
   if (attachment.contentType?.startsWith("image/")) return true;
+  if (attachment.contentType?.startsWith("video/")) return true;
   // Fallback for cases where Discord didn't set contentType.
-  return /\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(attachment.name ?? "");
+  return /\.(png|jpe?g|gif|webp|bmp|heic|heif|mp4|mov|webm|mkv|avi)$/i.test(
+    attachment.name ?? ""
+  );
 }
 
 /** Turns a Discord channel name like "family-photos" into "Family Photos". */
@@ -35,8 +38,9 @@ async function handleAttachment(
   channelName: string,
   createdAt: Date
 ): Promise<void> {
-  if (!isImageAttachment(attachment)) return;
+  if (!isMediaAttachment(attachment)) return;
   if (config.minImageBytes > 0 && attachment.size < config.minImageBytes) return;
+  if (config.maxMediaBytes > 0 && attachment.size > config.maxMediaBytes) return;
 
   const response = await fetch(attachment.url);
   if (!response.ok) {
