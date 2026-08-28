@@ -130,6 +130,7 @@ prefix in a watched text channel:
   `backfill` command for existing media.
 - `backfill` scans the channel history and uploads its existing images and
   videos into the channel's Immich album.
+- `list` shows watched channels in the current server.
 - `gallery` replies with a public link to the current channel's album.
 - `unwatch` stops runtime watching, and `list` shows watched channels.
 
