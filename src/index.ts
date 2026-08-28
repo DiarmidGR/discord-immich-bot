@@ -279,7 +279,7 @@ client.on(Events.MessageCreate, async (message) => {
 
 client.once(Events.ClientReady, async (readyClient) => {
   readyClient.user.setActivity(
-    `${config.commandPrefix} help`,
+    `${config.commandPrefix} help | ${new URL(config.immich.baseUrl).host}`,
     { type: ActivityType.Custom }
   );
   console.log(`Logged in as ${readyClient.user.tag}`);
