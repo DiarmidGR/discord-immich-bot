@@ -184,3 +184,10 @@ count when it finishes. Immich's stable asset IDs make rerunning it safe.
 - Immich's API has changed across versions before; if uploads start failing
   with 4xx errors after an Immich upgrade, check your server's own API docs
   at `<your-immich-url>/api/docs` — endpoint field names occasionally shift.
+
+## Future goals / ideas
+
+- A way to stream-line user configuration within the discord app itself would
+  be nice, like inputting API keys and perhaps the Immich server URL.
+- Greater indicator of what work is being done in the background while the bot
+  is backfilling.
