@@ -54,6 +54,78 @@ function isMissingAlbumError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('"message":"Album not found"');
 }
 
+type BackfillStatus = {
+  media: number;      // Number of media attachments found in text channel
+  created: number;    // Number of items uploaded to Immich
+  duplicate: number;  // Number of items skipped due to being duplicates in Immich
+  skipped: number;    // Number of items skipped due to not being media or being too small/large
+  failed: number;     // Number of items that failed to upload to Immich
+};
+
+type BackfillProgress = {
+  processed: number;    // Number of media attachments processed so far
+  total: number;        // Total number of media attachments found in text channel
+  created: number;      // Number of items uploaded to Immich so far
+  duplicate: number;    // Number of items skipped due to being duplicates in Immich so far
+  skipped: number;      // Number of items skipped due to not being media or being too small/large so far
+failed: number;         // Number of items that failed to upload to Immich so far 
+  channelName: string;  // Name of the channel being backfilled
+};
+
+function renderProgressBar(progress: number, width = 20): string {
+  const clampedProgress = Math.min(1, Math.max(0, progress));
+  const filled = Math.round(clampedProgress * width);
+  return `${"█".repeat(filled)}${"░".repeat(width - filled)}`;
+}
+
+function formatBackfillProgress({
+  label,
+  processed,
+  total,
+  created,
+  duplicate,
+  skipped,
+  failed,
+  channelName,
+}: {
+  label: string;
+  processed: number;
+  total: number;
+  created: number;
+  duplicate: number;
+  skipped: number;
+  failed: number;
+  channelName: string;
+}): string {
+  if (total === 0) {
+    return `${label} **#${channelName}** — no media found.`;
+  }
+
+  const percent = (processed / total) * 100;
+  const bar = renderProgressBar(processed / total);
+  return `${label} ${bar} ${processed}/${total} (${Math.round(percent)}%) • ${created} new • ${duplicate} duplicate • ${skipped} skipped • ${failed} failed`;
+}
+
+async function countMediaInChannel(channel: TextChannel): Promise<number> {
+  let before: string | undefined;
+  let total = 0;
+
+  while (true) {
+    const messages = await channel.messages.fetch({ limit: 100, before });
+    if (messages.size === 0) break;
+
+    for (const message of [...messages.values()]) {
+      total += [...message.attachments.values()].filter(isMediaAttachment).length;
+    }
+
+    if (messages.size < 100) break;
+    before = messages.last()?.id;
+    if (!before) break;
+  }
+
+  return total;
+}
+
 async function isWatched(channelId: string): Promise<boolean> {
   if (config.watchedChannelIds.has(channelId)) return true;
   return isDynamicallyWatched(channelId);
@@ -120,19 +192,23 @@ async function handleAttachment(
   return upload.status;
 }
 
-async function backfillChannel(channel: TextChannel): Promise<{
-  media: number;
-  created: number;
-  duplicate: number;
-  skipped: number;
-  failed: number;
-}> {
+async function backfillChannel(
+  channel: TextChannel,
+  options: {
+    totalMedia?: number;
+    onProgress?: (progress: BackfillProgress) => Promise<void> | void;
+  } = {}
+): Promise<BackfillStatus> {
   let before: string | undefined;
   let media = 0;
   let created = 0;
   let duplicate = 0;
   let skipped = 0;
   let failed = 0;
+  let processed = 0;
+  const totalMedia = options.totalMedia ?? (await countMediaInChannel(channel));
+  let lastProgressUpdate = 0;
+  let lastProgressWorked = 0;
 
   while (true) {
     const messages = await channel.messages.fetch({ limit: 100, before });
@@ -142,6 +218,7 @@ async function backfillChannel(channel: TextChannel): Promise<{
       const attachments = [...message.attachments.values()].filter(isMediaAttachment);
       media += attachments.length;
       for (const attachment of attachments) {
+        processed++;
         try {
           const status = await handleAttachment(
             attachment,
@@ -158,6 +235,26 @@ async function backfillChannel(channel: TextChannel): Promise<{
             `[error] Failed to backfill attachment ${attachment.id}:`,
             err
           );
+        }
+
+        if (options.onProgress) {
+          const now = Date.now();
+          if (
+            processed - lastProgressWorked >= 5 ||
+            now - lastProgressUpdate >= 250
+          ) {
+            await options.onProgress({
+              processed,
+              total: totalMedia,
+              created,
+              duplicate,
+              skipped,
+              failed,
+              channelName: channel.name,
+            });
+            lastProgressUpdate = now;
+            lastProgressWorked = processed;
+          }
         }
       }
     }
@@ -355,18 +452,55 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
         return;
       }
 
+      const channelTotals = await Promise.all(channels.map((child) => countMediaInChannel(child)));
+      const totalMedia = channelTotals.reduce((sum, count) => sum + count, 0);
       const progressMessage = await message.reply(
         `Backfill started; scanning ${channels.length} channel(s) in **${targetChannel.name}**...`
       );
       const result = { media: 0, created: 0, duplicate: 0, skipped: 0, failed: 0 };
-      for (const child of channels) {
-        // Each channel is processed separately, then its counts are added to the total.
-        const channelResult = await backfillChannel(child);
-        result.media += channelResult.media;
-        result.created += channelResult.created;
-        result.duplicate += channelResult.duplicate;
-        result.skipped += channelResult.skipped;
-        result.failed += channelResult.failed;
+      let processedMedia = 0;
+
+      for (let index = 0; index < channels.length; index++) {
+        const child = channels[index];
+        const previousProcessedMedia = processedMedia;
+        const childResult = await backfillChannel(child, {
+          totalMedia: channelTotals[index],
+          onProgress: async (progress) => {
+            const currentProcessed = previousProcessedMedia + progress.processed;
+            await progressMessage.edit(
+              formatBackfillProgress({
+                label: `Backfill in progress in **${targetChannel.name}**`,
+                processed: currentProcessed,
+                total: totalMedia,
+                created: result.created + progress.created,
+                duplicate: result.duplicate + progress.duplicate,
+                skipped: result.skipped + progress.skipped,
+                failed: result.failed + progress.failed,
+                channelName: child.name,
+              })
+            );
+          },
+        });
+
+        result.media += childResult.media;
+        result.created += childResult.created;
+        result.duplicate += childResult.duplicate;
+        result.skipped += childResult.skipped;
+        result.failed += childResult.failed;
+        processedMedia += channelTotals[index];
+
+        await progressMessage.edit(
+          formatBackfillProgress({
+            label: `Backfill in progress in **${targetChannel.name}**`,
+            processed: processedMedia,
+            total: totalMedia,
+            created: result.created,
+            duplicate: result.duplicate,
+            skipped: result.skipped,
+            failed: result.failed,
+            channelName: child.name,
+          })
+        );
       }
       await progressMessage.edit(
         `Backfill complete: ${result.created} new, ${result.duplicate} duplicate(s), ${result.skipped} skipped, ${result.failed} failed out of ${result.media} media attachment(s).`
@@ -382,8 +516,27 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       return;
     }
 
-    const progressMessage = await message.reply("Backfill started; scanning channel history...");
-    const result = await backfillChannel(targetChannel);
+    const totalMedia = await countMediaInChannel(targetChannel);
+    const progressMessage = await message.reply(
+      `Backfill started; scanning channel history...`
+    );
+    const result = await backfillChannel(targetChannel, {
+      totalMedia,
+      onProgress: async (progress) => {
+        await progressMessage.edit(
+          formatBackfillProgress({
+            label: "Backfill in progress",
+            processed: progress.processed,
+            total: progress.total,
+            created: progress.created,
+            duplicate: progress.duplicate,
+            skipped: progress.skipped,
+            failed: progress.failed,
+            channelName: targetChannel.name,
+          })
+        );
+      },
+    });
     await progressMessage.edit(
       `Backfill complete: ${result.created} new, ${result.duplicate} duplicate(s), ${result.skipped} skipped, ${result.failed} failed out of ${result.media} media attachment(s).`
     );
