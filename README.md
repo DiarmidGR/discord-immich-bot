@@ -16,6 +16,8 @@ the bot replies with a public link to that channel's album.
      failed uploads). Use the generated URL to invite the bot to your server.
    - Users who run `watch`, `backfill`, or `unwatch` need the **Manage Channels**
      permission; the bot itself does not need it.
+   - The `gallery` command is intentionally available to any user in a watched
+     channel, regardless of Discord permissions.
 
 2. **Get an Immich API key**
    - In the Immich web UI: Account Settings -> API Keys -> New API Key.
@@ -128,28 +130,32 @@ CHANNEL_ALBUM_OVERRIDES={"123456789012345678":"Family Photos"}
 
 ## Commands
 
-Users with the **Manage Channels** permission can use the configured command
-prefix in a server text channel:
+Users can use the configured command prefix in a server text channel. The
+`gallery` command is available to any user, while management commands remain
+restricted to users with the **Manage Channels** permission:
 
 - `watch` starts syncing new images and videos from the channel where the
   command is sent and offers the `backfill` command for existing media.
-- `watch <channel-id>` starts syncing the specified text channel instead. The
-  target channel must be in the same server as the command.
-- `watch <category-id>` starts syncing all text channels directly inside the
-  specified category. The category must be in the same server as the command.
-  New text channels created directly inside a watched category are added
-  automatically.
+- `watch <channel-id>` or `watch #general` or `watch general` starts syncing the
+  specified text channel instead. The target channel must be in the same server
+  as the command.
+- `watch <category-id>` or `watch #category-name` starts syncing all text channels
+  directly inside the specified category. The category must be in the same
+  server as the command. New text channels created directly inside a watched
+  category are added automatically.
 - `backfill` scans the command channel's history and uploads its existing images
   and videos into the channel's Immich album.
-- `backfill <channel-id>` scans the specified watched text channel instead. The
-  target channel must be in the same server as the command.
+- `backfill <channel-id>` or `backfill #general` or `backfill general` scans the
+  specified watched text channel instead. The target channel must be in the same
+  server as the command.
 - `backfill <category-id>` scans all watched text channels directly inside the
   specified category. The category must be in the same server as the command.
 - `list` shows watched channels in the current server.
 - `gallery` replies with a public link to the current channel's album.
 - `unwatch` stops runtime watching for the command channel.
-- `unwatch <channel-id>` stops runtime watching for the specified text channel.
-  The target channel must be in the same server as the command.
+- `unwatch <channel-id>` or `unwatch #general` or `unwatch general` stops runtime
+  watching for the specified text channel. The target channel must be in the
+  same server as the command.
 - `unwatch <category-id>` stops runtime watching for all text channels directly
   inside the specified category. Static `WATCHED_CHANNEL_IDS` entries are not
   removed.
