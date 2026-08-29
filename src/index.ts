@@ -182,7 +182,7 @@ async function resolveChannelTarget(
 ): Promise<TextChannel | CategoryChannel | null> {
   if (!message.guildId) return null;
 
-  const normalized = rawValue.trim();
+  const normalized = rawValue.trim().replace(/[\u200B-\u200D\uFEFF]/g, "");
   if (!normalized) return null;
 
   const idCandidate = normalized.replace(/^<#|>$/g, "").replace(/^#/, "");
@@ -215,7 +215,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       [
         "**Immich bot commands**",
         `\`${config.commandPrefix} help\` - Show this help message.`,
-        `\`${config.commandPrefix} gallery\` - Get a public link to this channel's album.`,
+        `\`${config.commandPrefix} gallery [channel]\` - Get a public link to this channel's album (defaults to the current channel, or accepts an ID, #channel, or channel name).`,
         `\`${config.commandPrefix} watch [channel-or-category]\` - Start watching this channel, or the specified channel/category (ID, #channel, or channel name), for images and videos.`,
         `\`${config.commandPrefix} backfill [channel-or-category]\` - Upload existing images and videos from this watched channel, or the specified channel/category (ID, #channel, or channel name).`,
         `\`${config.commandPrefix} unwatch [channel-or-category]\` - Stop watching this channel, or the specified channel/category (ID, #channel, or channel name).`,
@@ -228,13 +228,23 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
   if (subcommand === "gallery") {
     // Gallery links are intentionally available to any user in a watched channel,
     // regardless of Discord role/permission state.
-    if (!(await isWatched(message.channelId))) {
+    const targetChannel = args[1]
+      ? await resolveChannelTarget(message, args[1])
+      : (channel as TextChannel);
+
+    if (!(targetChannel instanceof TextChannel) || targetChannel.guildId !== message.guildId) {
+      await message.reply("Please specify a text channel in this server.");
+      return;
+    }
+
+    if (!(await isWatched(targetChannel.id))) {
       await message.reply(
-        `This channel isn't being watched. Use \`${config.commandPrefix} watch\` first.`
+        `#${targetChannel.name} isn't being watched. Use \`${config.commandPrefix} watch\` first.`
       );
       return;
     }
-    const albumName = albumNameForChannel(message.channelId, channelName);
+
+    const albumName = albumNameForChannel(targetChannel.id, targetChannel.name);
     const albumId = await getOrCreateAlbumId(albumName);
     const albumUrl = await getOrCreateAlbumShareUrl(albumId);
     await message.reply(albumUrl);
@@ -261,6 +271,8 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("Please specify a text channel or category in this server.");
       return;
     }
+
+    const resolvedTargetChannelId = targetChannel.id;
 
     if (targetChannel instanceof CategoryChannel) {
       // A category can contain several channel types, but only text channels receive messages.
@@ -289,12 +301,12 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
     }
 
     const targetChannelName = targetChannel.name;
-    if (config.watchedChannelIds.has(targetChannelId)) {
+    if (config.watchedChannelIds.has(resolvedTargetChannelId)) {
       await message.reply(`#${targetChannelName} is already watched (configured at startup).`);
       return;
     }
     const added = await addChannel(
-      targetChannelId,
+      resolvedTargetChannelId,
       message.guildId,
       targetChannelName,
       message.author.tag
@@ -326,6 +338,8 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("Please specify a text channel or category in this server.");
       return;
     }
+
+    const resolvedTargetChannelId = targetChannel.id;
 
     if (targetChannel instanceof CategoryChannel) {
       // Only backfill watched text channels directly inside the category.
@@ -361,9 +375,9 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
     }
 
     // Backfill is only allowed for channels that are already on the watchlist.
-    if (!(await isWatched(targetChannelId))) {
+    if (!(await isWatched(resolvedTargetChannelId))) {
       await message.reply(
-        `#${targetChannel.name} isn't being watched. Use \`${config.commandPrefix} watch ${targetChannelId}\` first.`
+        `#${targetChannel.name} isn't being watched. Use \`${config.commandPrefix} watch ${resolvedTargetChannelId}\` first.`
       );
       return;
     }
@@ -396,6 +410,8 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       return;
     }
 
+    const resolvedTargetChannelId = targetChannel.id;
+
     if (targetChannel instanceof CategoryChannel) {
       // Remove dynamic entries for every text channel in the category.
       const channels = [...targetChannel.children.cache.values()].filter(
@@ -416,13 +432,13 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
     }
 
     // Static configuration is separate from the runtime watchlist, so it cannot be removed here.
-    if (config.watchedChannelIds.has(targetChannelId)) {
+    if (config.watchedChannelIds.has(resolvedTargetChannelId)) {
       await message.reply(
         "This channel is watched via static config (`WATCHED_CHANNEL_IDS`), not a runtime command — remove it there instead."
       );
       return;
     }
-    const removed = await removeChannel(targetChannelId);
+    const removed = await removeChannel(resolvedTargetChannelId);
     await message.reply(
       removed ? `Stopped watching #${targetChannel.name}.` : `#${targetChannel.name} wasn't being watched.`
     );
