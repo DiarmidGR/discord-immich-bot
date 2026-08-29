@@ -176,6 +176,35 @@ function canManageWatchlist(message: Message): boolean {
   return message.member.permissions.has(PermissionsBitField.Flags.ManageChannels);
 }
 
+async function resolveChannelTarget(
+  message: Message,
+  rawValue: string
+): Promise<TextChannel | CategoryChannel | null> {
+  if (!message.guildId) return null;
+
+  const normalized = rawValue.trim();
+  if (!normalized) return null;
+
+  const idCandidate = normalized.replace(/^<#|>$/g, "").replace(/^#/, "");
+  if (/^\d+$/.test(idCandidate)) {
+    const channel = await client.channels.fetch(idCandidate).catch(() => null);
+    if (!(channel instanceof TextChannel || channel instanceof CategoryChannel)) return null;
+    if (channel.guildId !== message.guildId) return null;
+    return channel;
+  }
+
+  const targetName = idCandidate.toLowerCase();
+  const guild = message.guild;
+  if (!guild) return null;
+
+  const match = guild.channels.cache.find((channel) => {
+    if (!(channel instanceof TextChannel || channel instanceof CategoryChannel)) return false;
+    return channel.name.toLowerCase() === targetName;
+  });
+
+  return match instanceof TextChannel || match instanceof CategoryChannel ? match : null;
+}
+
 async function handleCommand(message: Message, args: string[]): Promise<void> {
   const subcommand = args[0]?.toLowerCase();
   const channel = message.channel as TextChannel;
@@ -187,9 +216,9 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
         "**Immich bot commands**",
         `\`${config.commandPrefix} help\` - Show this help message.`,
         `\`${config.commandPrefix} gallery\` - Get a public link to this channel's album.`,
-        `\`${config.commandPrefix} watch [channel-or-category-id]\` - Start watching this channel, or the specified channel/category, for images and videos.`,
-        `\`${config.commandPrefix} backfill [channel-or-category-id]\` - Upload existing images and videos from this watched channel, or the specified channel/category.`,
-        `\`${config.commandPrefix} unwatch [channel-or-category-id]\` - Stop watching this channel, or the specified channel/category.`,
+        `\`${config.commandPrefix} watch [channel-or-category]\` - Start watching this channel, or the specified channel/category (ID, #channel, or channel name), for images and videos.`,
+        `\`${config.commandPrefix} backfill [channel-or-category]\` - Upload existing images and videos from this watched channel, or the specified channel/category (ID, #channel, or channel name).`,
+        `\`${config.commandPrefix} unwatch [channel-or-category]\` - Stop watching this channel, or the specified channel/category (ID, #channel, or channel name).`,
         `\`${config.commandPrefix} list\` - List all channels currently being watched.`,
       ].join("\n")
     );
@@ -197,6 +226,8 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
   }
 
   if (subcommand === "gallery") {
+    // Gallery links are intentionally available to any user in a watched channel,
+    // regardless of Discord role/permission state.
     if (!(await isWatched(message.channelId))) {
       await message.reply(
         `This channel isn't being watched. Use \`${config.commandPrefix} watch\` first.`
@@ -219,13 +250,12 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("This command can only be used in a server.");
       return;
     }
-    // With no ID, keep the original behavior and target the channel containing the command.
+    // With no selector, keep the original behavior and target the channel containing the command.
     const targetChannelId = args[1] ?? message.channelId;
-    // The current channel is already available; otherwise fetch the ID supplied by the user.
     const targetChannel =
       targetChannelId === message.channelId
         ? channel
-        : await client.channels.fetch(targetChannelId).catch(() => null);
+        : await resolveChannelTarget(message, targetChannelId);
     // This check also narrows targetChannel to a TextChannel or CategoryChannel below.
     if (!(targetChannel instanceof TextChannel || targetChannel instanceof CategoryChannel) || targetChannel.guildId !== message.guildId) {
       await message.reply("Please specify a text channel or category in this server.");
@@ -286,13 +316,12 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
       await message.reply("This command can only be used in a server.");
       return;
     }
-    // A missing ID means backfill the channel where the command was sent.
+    // A missing selector means backfill the channel where the command was sent.
     const targetChannelId = args[1] ?? message.channelId;
-    // Fetch another channel only when the user supplied a different ID.
     const targetChannel =
       targetChannelId === message.channelId
         ? channel
-        : await client.channels.fetch(targetChannelId).catch(() => null);
+        : await resolveChannelTarget(message, targetChannelId);
     if (!(targetChannel instanceof TextChannel || targetChannel instanceof CategoryChannel) || targetChannel.guildId !== message.guildId) {
       await message.reply("Please specify a text channel or category in this server.");
       return;
@@ -358,11 +387,10 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
     }
     // Fall back to the command channel so bare `unwatch` remains unchanged.
     const targetChannelId = args[1] ?? message.channelId;
-    // Resolve a supplied ID through Discord and reject channels from another server.
     const targetChannel =
       targetChannelId === message.channelId
         ? channel
-        : await client.channels.fetch(targetChannelId).catch(() => null);
+        : await resolveChannelTarget(message, targetChannelId);
     if (!(targetChannel instanceof TextChannel || targetChannel instanceof CategoryChannel) || targetChannel.guildId !== message.guildId) {
       await message.reply("Please specify a text channel or category in this server.");
       return;
