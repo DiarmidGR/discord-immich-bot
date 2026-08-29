@@ -152,6 +152,8 @@ restricted to users with the **Manage Channels** permission:
   specified category. The category must be in the same server as the command.
 - `list` shows watched channels in the current server.
 - `gallery` replies with a public link to the current channel's album.
+- `gallery <channel-id>` or `gallery #general` or `gallery general` replies with
+  a public link to that watched channel's album instead.
 - `unwatch` stops runtime watching for the command channel.
 - `unwatch <channel-id>` or `unwatch #general` or `unwatch general` stops runtime
   watching for the specified text channel. The target channel must be in the
