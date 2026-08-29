@@ -627,11 +627,16 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
     return;
   }
 
+  if (subcommand == "github") {
+    await message.reply("Check out my GitHub repository: https://github.com/DiarmidGR/discord-immich-bot");
+  }
+
   await message.reply(
     `Unknown command. Use \`${config.commandPrefix} help\` to see all commands.`
   );
 }
 
+// Handle messages in watched channels, and commands starting with the configured prefix.
 client.on(Events.MessageCreate, async (message) => {
   if (message.author.bot) return;
 
@@ -669,6 +674,7 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
+// Automatically watch new channels created inside a watched category.
 client.on(Events.ChannelCreate, async (createdChannel) => {
   // New channels without a parent are not inside a category, so there is nothing to inherit.
   if (!(createdChannel instanceof TextChannel) || !createdChannel.parentId) return;
@@ -686,6 +692,7 @@ client.on(Events.ChannelCreate, async (createdChannel) => {
   }
 });
 
+// Set the bot's activity status and log when it's ready.
 client.once(Events.ClientReady, async (readyClient) => {
   readyClient.user.setActivity(
     `${config.commandPrefix} help | ${new URL(config.immich.baseUrl).host}`,
