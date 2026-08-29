@@ -317,6 +317,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
         `\`${config.commandPrefix} backfill [channel-or-category]\` - Upload existing images and videos from this watched channel, or the specified channel/category (ID, #channel, or channel name).`,
         `\`${config.commandPrefix} unwatch [channel-or-category]\` - Stop watching this channel, or the specified channel/category (ID, #channel, or channel name).`,
         `\`${config.commandPrefix} list\` - List all channels currently being watched.`,
+        `\`${config.commandPrefix} github\` - Show the GitHub repository for this bot.`,
       ].join("\n")
     );
     return;
@@ -627,8 +628,9 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
     return;
   }
 
-  if (subcommand == "github") {
+  if (subcommand === "github") {
     await message.reply("Check out my GitHub repository: https://github.com/DiarmidGR/discord-immich-bot");
+    return;
   }
 
   await message.reply(
@@ -638,6 +640,7 @@ async function handleCommand(message: Message, args: string[]): Promise<void> {
 
 // Handle messages in watched channels, and commands starting with the configured prefix.
 client.on(Events.MessageCreate, async (message) => {
+  // Cancel operation if the sender of the message was a bot (self including)
   if (message.author.bot) return;
 
   const trimmed = message.content.trim();
